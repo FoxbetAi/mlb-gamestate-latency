@@ -1,0 +1,35 @@
+{
+  "name": "mlb-gamestate-latency",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kafkajs/confluent-schema-registry": "^4.1.0",
+    "fast-json-patch": "^3.1.1",
+    "kafkajs": "^2.2.4",
+    "next": "16.2.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
+  }
+}
