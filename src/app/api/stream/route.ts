@@ -106,7 +106,10 @@ export async function GET(request: Request) {
       void run();
       cleanup = () => {
         clearInterval(heartbeat);
-        void consumer.disconnect().finally(close);
+        // Mark the stream closed before the async Kafka disconnect so an
+        // in-flight Schema Registry decode cannot enqueue after cancellation.
+        close();
+        void consumer.disconnect();
       };
       request.signal.addEventListener("abort", cleanup, { once: true });
     },

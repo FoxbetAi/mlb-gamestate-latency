@@ -38,7 +38,7 @@ npm run dev
 
 Without credentials, the app automatically runs in deterministic demo mode. Open [http://localhost:3000](http://localhost:3000).
 
-The Redpanda values come from the development environment's SASL secret. Schema Registry credentials are also required because topic values use Schema Registry-framed Protobuf.
+The development serverless cluster uses Redpanda Cloud OIDC. Configure `REDPANDA_CLOUD_CLIENT_ID` and `REDPANDA_CLOUD_CLIENT_SECRET`; the server exchanges them for short-lived bearer tokens for both Kafka and Schema Registry. Static SASL/basic credentials remain supported as a fallback because topic values use Schema Registry-framed Protobuf.
 
 For sources whose native event identifier cannot be inferred from Cubs/opponent names, set explicit aliases:
 
