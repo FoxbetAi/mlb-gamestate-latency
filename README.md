@@ -59,7 +59,7 @@ Put that JSON on one line in `GAME_SOURCE_IDS`.
 2. Enable Vercel Deployment Protection (or put the project behind equivalent organization authentication) before adding dev-cluster credentials. The UI exposes internal feed telemetry and must not be a public deployment.
 3. Add the variables from `.env.example` to the Vercel project. Do not prefix credentials with `NEXT_PUBLIC_`.
 4. Confirm Vercel egress can reach both the Redpanda Kafka API and Schema Registry.
-5. Use a plan that permits the `/api/stream` function's configured 800-second duration.
+5. The `/api/stream` function runs in 300-second segments, the Vercel Hobby maximum. EventSource reconnects automatically between segments.
 
 The browser reconnects the SSE stream automatically. Comparison history lives in the browser for the duration of the page session, while every new server stream uses a unique, read-only Kafka consumer group and starts at the latest offsets.
 

@@ -5,7 +5,9 @@ import type { Game, StreamMessage } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 800;
+// Hobby deployments cap functions at 300s. EventSource reconnects each segment
+// while the browser preserves the game-long comparison history.
+export const maxDuration = 300;
 
 const encoder = new TextEncoder();
 const event = (message: StreamMessage) => encoder.encode(`data: ${JSON.stringify(message)}\n\n`);
