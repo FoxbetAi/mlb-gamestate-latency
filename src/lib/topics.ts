@@ -16,6 +16,7 @@ export const TOPICS: TopicDefinition[] = [
   { id: "espn", topic: "espn.game.events.v1", label: "ESPN Fastcast", shortLabel: "ESPN", cadence: "WebSocket" },
   { id: "scrape", topic: "scrape.game.events.v1", label: "Sportsbook scrape", shortLabel: "Scrape", cadence: "Change driven" },
   { id: "market", topic: "market.game.events.v1", label: "Normalized market", shortLabel: "Normalized", cadence: "Derived" },
+  { id: "srlmt", topic: "market.game.test.events.v1", label: "SR LMT (comparison)", shortLabel: "SR", cadence: "WebSocket" },
 ];
 
 export const TOPIC_BY_NAME = new Map(TOPICS.map((definition) => [definition.topic, definition]));

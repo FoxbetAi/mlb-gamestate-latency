@@ -36,4 +36,60 @@ describe("normalizeObservation", () => {
     }, 2_000, foldState());
     expect(observation?.state).toMatchObject({ inning: 7, half: null, balls: null, strikes: null, outs: null, awayScore: 3, homeScore: 2 });
   });
+
+  // Payload transcribed from a live dev record on market.game.test.events.v1
+  // (offset 11306, key srlmt|nba_sl_260714_sac_bkn) decoded field-by-field
+  // against sharpapi_game_events.proto. Enums shown as their numeric tags —
+  // how the Confluent Schema Registry protobuf decoder returns them.
+  const srBasketballFrame = {
+    t_ns: 1_784_070_993_237_000_000,
+    home_score: 73,
+    away_score: 41,
+    source: 2, // UPDATE
+    source_t_ns: 1_784_070_993_200_000_000,
+    f_event_id: "nba_sl_260714_sac_bkn",
+    sport_kind: 3, // SPORT_BASKETBALL
+    league_code: 3, // LEAGUE_NBA_SL
+    halt_signal: 1, // LIVE
+    f_home_team_id: "nba_sl_bkn",
+    f_away_team_id: "nba_sl_sac",
+    basketball: { period: 3 /* Q3 */, clock_seconds_remaining: 293 },
+  };
+
+  it("decodes an SR basketball GamestateEvent from the shared lane, keyed by the srlmt| prefix", () => {
+    const observation = normalizeObservation(
+      "market.game.test.events.v1",
+      "srlmt|nba_sl_260714_sac_bkn",
+      srBasketballFrame,
+      2_000,
+      foldState(),
+    );
+    // Provenance and identity come from the key prefix, not the topic.
+    expect(observation?.source).toBe("srlmt");
+    expect(observation?.recordKey).toBe("nba_sl_260714_sac_bkn");
+    expect(observation?.sourceIdentity).toBe("nba_sl_260714_sac_bkn");
+    // Real basketball decode — not the heuristic fallback (which would guess null period/clock).
+    expect(observation?.state).toMatchObject({
+      inning: null,
+      half: null,
+      awayScore: 41,
+      homeScore: 73,
+      live: true,
+      period: "Q3",
+      clockSeconds: 293,
+    });
+    expect(observation?.sourceAt).toBeGreaterThan(0);
+  });
+
+  it("maps a halted basketball frame to live=false and decodes the enum-name (fallback) period form", () => {
+    const observation = normalizeObservation(
+      "market.game.test.events.v1",
+      "srlmt|nba_sl_260714_mem_gsw",
+      { ...srBasketballFrame, halt_signal: "HALTED_NOT_LIVE", basketball: { period: "HALFTIME", clock_seconds_remaining: 0 } },
+      2_000,
+      foldState(),
+    );
+    expect(observation?.source).toBe("srlmt");
+    expect(observation?.state).toMatchObject({ live: false, period: "HALFTIME", clockSeconds: 0 });
+  });
 });

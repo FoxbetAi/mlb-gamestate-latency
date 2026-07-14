@@ -5,7 +5,11 @@ export type SourceId =
   | "polymarket"
   | "espn"
   | "scrape"
-  | "market";
+  | "market"
+  // Sportradar LMT comparison leg. Token is load-bearing: the upstream producer
+  // hard-codes it (universal-mapping SourceSrlmt) as the key prefix this app
+  // matches on for the shared market.game.test.events.v1 lane.
+  | "srlmt";
 
 export type Game = {
   gamePk: string;
@@ -27,6 +31,10 @@ export type GameState = {
   awayScore: number | null;
   homeScore: number | null;
   live: boolean | null;
+  // Basketball (srlmt) projections. Optional and absent on baseball states;
+  // baseball has no period label / game clock and these stay undefined there.
+  period?: string | null; // typed period label, e.g. "Q3", "HALFTIME", "END_Q2"
+  clockSeconds?: number | null; // seconds remaining in the current period
 };
 
 export type Observation = {

@@ -1,6 +1,24 @@
 import { applyPatch } from "fast-json-patch";
-import { TOPIC_BY_NAME } from "./topics";
-import type { Game, GameState, Observation } from "./types";
+import { SOURCE_ORDER, TOPIC_BY_NAME } from "./topics";
+import type { Game, GameState, Observation, SourceId } from "./types";
+
+// market.game.test.events.v1 is a shared multi-producer comparison lane keyed
+// "<source_id>|<f_event_id>" (upstream: libs/topics/topics.go, universal-mapping
+// produce.go). One-topic-one-source does NOT survive it — GamestateEvent has no
+// provenance field, so the key prefix is the only provenance.
+const SHARED_LANE_TOPIC = "market.game.test.events.v1";
+
+const KNOWN_SOURCES = new Set<string>(SOURCE_ORDER);
+
+// Split "<source_id>|<f_event_id>" on the first "|". Records without a "|" keep
+// the whole key as identity and carry no source token.
+const splitSharedLaneKey = (key: string): { sourceToken: string; fEventId: string } => {
+  const index = key.indexOf("|");
+  if (index < 0) return { sourceToken: "", fEventId: key };
+  return { sourceToken: key.slice(0, index), fEventId: key.slice(index + 1) };
+};
+
+const resolveSource = (token: string): SourceId | null => (KNOWN_SOURCES.has(token) ? (token as SourceId) : null);
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -93,6 +111,30 @@ const findTeamScore = (payload: unknown, side: "home" | "away") => {
   return null;
 };
 
+// BasketballGamestate.Period enum (sharpapi_game_events.proto). Confluent SR
+// decodes protobuf enums as their numeric tag; the well-known-type fallback path
+// emits the enum name string. Handle both.
+const BASKETBALL_PERIODS: Record<number, string> = {
+  1: "Q1", 2: "Q2", 3: "Q3", 4: "Q4",
+  5: "END_Q1", 6: "END_Q2", 7: "END_Q3", 8: "END_Q4",
+  9: "HALFTIME", 10: "OVERTIME", 11: "END_OVERTIME", 12: "FINAL",
+};
+
+const basketballPeriodLabel = (value: unknown): string | null => {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "number") return BASKETBALL_PERIODS[value] ?? null;
+  const text = asString(value);
+  return text === "" || text === "PERIOD_UNSPECIFIED" ? null : text;
+};
+
+// HaltSignal.LIVE (enum tag 1) — the only value that means in-play. Decoded as
+// numeric 1 (SR path) or "LIVE" (fallback path); anything else is halted.
+const haltIsLive = (value: unknown): boolean | null => {
+  if (value === undefined || value === null) return null;
+  const text = asString(value).toUpperCase();
+  return text === "LIVE" || text === "1";
+};
+
 const exactState = (topic: string, decoded: UnknownRecord, payload: unknown): GameState | null => {
   if (topic === "statsapi.game.events.v1") {
     const linescore = at(payload, "liveData", "linescore");
@@ -160,6 +202,26 @@ const exactState = (topic: string, decoded: UnknownRecord, payload: unknown): Ga
       live: normalizeBoolean(read(decoded, "halt_signal", "haltSignal")),
     };
   }
+
+  if (topic === SHARED_LANE_TOPIC) {
+    // Same sharpv1.GamestateEvent message as market.game.events.v1, but the SR
+    // (srlmt) leg populates the BasketballGamestate `basketball = 40` oneof
+    // extension instead of `baseball`. Scores/halt live on the top-level fields.
+    const basketball = read(decoded, "basketball");
+    if (!isRecord(basketball)) return null; // not a basketball frame → heuristic fallback
+    return {
+      inning: null, // basketball has no innings; period/clock carry the phase
+      half: null,
+      balls: null,
+      strikes: null,
+      outs: null,
+      awayScore: asNumber(read(decoded, "away_score", "awayScore")),
+      homeScore: asNumber(read(decoded, "home_score", "homeScore")),
+      live: haltIsLive(read(decoded, "halt_signal", "haltSignal")),
+      period: basketballPeriodLabel(read(basketball, "period")),
+      clockSeconds: asNumber(read(basketball, "clock_seconds_remaining", "clockSecondsRemaining")),
+    };
+  }
   return null;
 };
 
@@ -189,10 +251,13 @@ const foldEspn = (value: UnknownRecord, foldState: FoldState) => {
 
 export function gameMatches(topic: string, key: string, decoded: UnknownRecord, game: Game, aliases: Record<string, string>): boolean {
   if (topic === "statsapi.game.events.v1") return key === game.gamePk || asString(read(decoded, "game_pk", "gamePk")) === game.gamePk;
+  // Shared lane: identity is the f_event_id after the "<source>|" prefix, not
+  // the raw Kafka key.
+  const matchKey = topic === SHARED_LANE_TOPIC ? splitSharedLaneKey(key).fEventId : key;
   const explicit = aliases[topic];
   if (explicit) {
     const identity = jsonText(decoded);
-    return key === explicit || identity.includes(explicit);
+    return matchKey === explicit || identity.includes(explicit);
   }
   const haystack = jsonText(decoded).toLowerCase();
   const cubsTokens = ["chicago cubs", "cubs", "chc"];
@@ -225,16 +290,22 @@ export function normalizeObservation(topic: string, key: string, decoded: unknow
   const sourceTNs = asNumber(read(decoded, "source_t_ns", "sourceTNs"));
   const sourceAt = sourceTNs && sourceTNs > 0 ? sourceTNs / 1e6 : rawTNs && rawTNs > 0 ? rawTNs / 1e6 : null;
   const identityKeys = ["game_pk", "gamePk", "fixture_id", "fixtureId", "sr_match_id", "srMatchId", "game_id", "gameId", "espn_event_id", "espnEventId", "source_event_id", "sourceEventId", "event_id", "eventId"];
-  const sourceIdentity = asString(read(decoded, ...identityKeys)) || key;
   const frameType = asString(read(decoded, "frame_type", "frameType", "source", "book"));
+
+  // Shared lane: provenance and record identity come from the "<source>|<f_event_id>"
+  // key prefix, not the topic. Everywhere else keeps the one-topic-one-source model.
+  const shared = topic === SHARED_LANE_TOPIC ? splitSharedLaneKey(key) : null;
+  const source = shared ? (resolveSource(shared.sourceToken) ?? definition.id) : definition.id;
+  const recordKey = shared ? shared.fEventId : key;
+  const sourceIdentity = shared ? shared.fEventId : asString(read(decoded, ...identityKeys)) || key;
 
   return {
     id: `${topic}:${key}:${observedAt}`,
-    source: definition.id,
+    source,
     topic,
     observedAt,
     sourceAt,
-    recordKey: key,
+    recordKey,
     sourceIdentity,
     frameType,
     state,
