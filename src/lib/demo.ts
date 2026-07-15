@@ -1,5 +1,5 @@
-import { TOPICS } from "./topics";
-import type { Game, GameState, Observation } from "./types";
+import { SOURCES, TOPICS } from "./topics";
+import type { Game, GameState, Observation, SourceId } from "./types";
 
 export const DEMO_GAME: Game = {
   gamePk: "demo-cubs",
@@ -21,18 +21,23 @@ const STATES: GameState[] = [
   { inning: 1, half: "bottom", balls: 0, strikes: 0, outs: 0, awayScore: 1, homeScore: 0, live: true },
 ];
 
-const offsets = [42, 110, 18, 280, 75, 155, 95];
+const offsets = [42, 110, 18, 280, 75, 155, 95, 130];
+
+// A source's demo records need a topic to sit on: its dedicated topic, or the
+// shared comparison lane for feeds that ride it.
+const topicForSource = (source: SourceId) =>
+  TOPICS.find((topic) => topic.source === source)?.topic ?? "market.game.test.events.v1";
 
 export function demoObservations(step: number, baseline: number): Observation[] {
   const state = STATES[step % STATES.length];
-  return TOPICS.map((topic, index) => ({
-    id: `demo:${step}:${topic.id}`,
-    source: topic.id,
-    topic: topic.topic,
-    observedAt: baseline + offsets[index] + ((step * 17 + index * 11) % 21),
+  return SOURCES.map((feed, index) => ({
+    id: `demo:${step}:${feed.id}`,
+    source: feed.id,
+    topic: topicForSource(feed.id),
+    observedAt: baseline + offsets[index % offsets.length] + ((step * 17 + index * 11) % 21),
     sourceAt: baseline - 25,
     recordKey: DEMO_GAME.gamePk,
-    sourceIdentity: `${topic.id}-demo`,
+    sourceIdentity: `${feed.id}-demo`,
     frameType: step === 0 ? "snapshot" : "update",
     state,
   }));
