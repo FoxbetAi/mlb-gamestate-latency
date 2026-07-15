@@ -41,7 +41,7 @@ describe("normalizeObservation", () => {
   // (offset 11306, key srlmt|nba_sl_260714_sac_bkn) decoded field-by-field
   // against sharpapi_game_events.proto. Enums shown as their numeric tags —
   // how the Confluent Schema Registry protobuf decoder returns them.
-  const srBasketballFrame = {
+  const basketballFrame = {
     t_ns: 1_784_070_993_237_000_000,
     home_score: 73,
     away_score: 41,
@@ -56,11 +56,11 @@ describe("normalizeObservation", () => {
     basketball: { period: 3 /* Q3 */, clock_seconds_remaining: 293 },
   };
 
-  it("decodes an SR basketball GamestateEvent from the shared lane, keyed by the srlmt| prefix", () => {
+  it("decodes a basketball GamestateEvent from the shared lane, keyed by the srlmt| prefix", () => {
     const observation = normalizeObservation(
       "market.game.test.events.v1",
       "srlmt|nba_sl_260714_sac_bkn",
-      srBasketballFrame,
+      basketballFrame,
       2_000,
       foldState(),
     );
@@ -85,11 +85,31 @@ describe("normalizeObservation", () => {
     const observation = normalizeObservation(
       "market.game.test.events.v1",
       "srlmt|nba_sl_260714_mem_gsw",
-      { ...srBasketballFrame, halt_signal: "HALTED_NOT_LIVE", basketball: { period: "HALFTIME", clock_seconds_remaining: 0 } },
+      { ...basketballFrame, halt_signal: "HALTED_NOT_LIVE", basketball: { period: "HALFTIME", clock_seconds_remaining: 0 } },
       2_000,
       foldState(),
     );
     expect(observation?.source).toBe("srlmt");
     expect(observation?.state).toMatchObject({ live: false, period: "HALFTIME", clockSeconds: 0 });
+  });
+
+  it("decodes a baseball GamestateEvent on the same shared lane (the lane is multi-sport, not basketball-only)", () => {
+    const observation = normalizeObservation(
+      "market.game.test.events.v1",
+      "srlmt|mlb_776543",
+      {
+        t_ns: 1_784_070_993_237_000_000,
+        home_score: 4,
+        away_score: 2,
+        halt_signal: 1, // LIVE
+        f_event_id: "mlb_776543",
+        baseball: { inning: { number: 6, half: "TOP" }, in_play: { balls: 2, strikes: 1, outs: 0 } },
+      },
+      2_000,
+      foldState(),
+    );
+    expect(observation?.source).toBe("srlmt");
+    // Baseball oneof decoded — not the basketball path, not the heuristic fallback.
+    expect(observation?.state).toMatchObject({ inning: 6, half: "top", balls: 2, strikes: 1, outs: 0, awayScore: 2, homeScore: 4, live: true });
   });
 });

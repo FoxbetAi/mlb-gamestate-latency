@@ -111,9 +111,9 @@ const findTeamScore = (payload: unknown, side: "home" | "away") => {
   return null;
 };
 
-// BasketballGamestate.Period enum (sharpapi_game_events.proto). Confluent SR
-// decodes protobuf enums as their numeric tag; the well-known-type fallback path
-// emits the enum name string. Handle both.
+// BasketballGamestate.Period enum (sharpapi_game_events.proto). The Confluent
+// Schema Registry decoder emits protobuf enums as their numeric tag; the
+// well-known-type fallback path emits the enum name string. Handle both.
 const BASKETBALL_PERIODS: Record<number, string> = {
   1: "Q1", 2: "Q2", 3: "Q3", 4: "Q4",
   5: "END_Q1", 6: "END_Q2", 7: "END_Q3", 8: "END_Q4",
@@ -128,11 +128,49 @@ const basketballPeriodLabel = (value: unknown): string | null => {
 };
 
 // HaltSignal.LIVE (enum tag 1) — the only value that means in-play. Decoded as
-// numeric 1 (SR path) or "LIVE" (fallback path); anything else is halted.
+// numeric 1 (schema-registry path) or "LIVE" (well-known-type path); anything
+// else is halted.
 const haltIsLive = (value: unknown): boolean | null => {
   if (value === undefined || value === null) return null;
   const text = asString(value).toUpperCase();
   return text === "LIVE" || text === "1";
+};
+
+// A canonical sharpv1.GamestateEvent carries exactly one sport oneof. These two
+// decoders read whichever is present; both the market.game.events.v1 topic and
+// the shared comparison lane reuse them.
+const baseballState = (decoded: UnknownRecord): GameState | null => {
+  const baseball = read(decoded, "baseball");
+  if (!isRecord(baseball)) return null;
+  const inning = at(baseball, "inning");
+  const inPlay = at(baseball, "in_play") ?? at(baseball, "inPlay");
+  return {
+    inning: inningNumber(at(inning, "number")),
+    half: normalizeHalf(at(inning, "half")),
+    balls: asNumber(at(inPlay, "balls")),
+    strikes: asNumber(at(inPlay, "strikes")),
+    outs: asNumber(at(inPlay, "outs")),
+    awayScore: asNumber(read(decoded, "away_score", "awayScore")),
+    homeScore: asNumber(read(decoded, "home_score", "homeScore")),
+    live: normalizeBoolean(read(decoded, "halt_signal", "haltSignal")),
+  };
+};
+
+const basketballState = (decoded: UnknownRecord): GameState | null => {
+  const basketball = read(decoded, "basketball");
+  if (!isRecord(basketball)) return null;
+  return {
+    inning: null, // basketball has no innings; period/clock carry the phase
+    half: null,
+    balls: null,
+    strikes: null,
+    outs: null,
+    awayScore: asNumber(read(decoded, "away_score", "awayScore")),
+    homeScore: asNumber(read(decoded, "home_score", "homeScore")),
+    live: haltIsLive(read(decoded, "halt_signal", "haltSignal")),
+    period: basketballPeriodLabel(read(basketball, "period")),
+    clockSeconds: asNumber(read(basketball, "clock_seconds_remaining", "clockSecondsRemaining")),
+  };
 };
 
 const exactState = (topic: string, decoded: UnknownRecord, payload: unknown): GameState | null => {
@@ -187,40 +225,15 @@ const exactState = (topic: string, decoded: UnknownRecord, payload: unknown): Ga
   }
 
   if (topic === "market.game.events.v1") {
-    const baseball = read(decoded, "baseball");
-    const inning = at(baseball, "inning");
-    const inPlay = at(baseball, "in_play") ?? at(baseball, "inPlay");
-    if (!isRecord(baseball)) return null;
-    return {
-      inning: inningNumber(at(inning, "number")),
-      half: normalizeHalf(at(inning, "half")),
-      balls: asNumber(at(inPlay, "balls")),
-      strikes: asNumber(at(inPlay, "strikes")),
-      outs: asNumber(at(inPlay, "outs")),
-      awayScore: asNumber(read(decoded, "away_score", "awayScore")),
-      homeScore: asNumber(read(decoded, "home_score", "homeScore")),
-      live: normalizeBoolean(read(decoded, "halt_signal", "haltSignal")),
-    };
+    return baseballState(decoded);
   }
 
   if (topic === SHARED_LANE_TOPIC) {
-    // Same sharpv1.GamestateEvent message as market.game.events.v1, but the SR
-    // (srlmt) leg populates the BasketballGamestate `basketball = 40` oneof
-    // extension instead of `baseball`. Scores/halt live on the top-level fields.
-    const basketball = read(decoded, "basketball");
-    if (!isRecord(basketball)) return null; // not a basketball frame → heuristic fallback
-    return {
-      inning: null, // basketball has no innings; period/clock carry the phase
-      half: null,
-      balls: null,
-      strikes: null,
-      outs: null,
-      awayScore: asNumber(read(decoded, "away_score", "awayScore")),
-      homeScore: asNumber(read(decoded, "home_score", "homeScore")),
-      live: haltIsLive(read(decoded, "halt_signal", "haltSignal")),
-      period: basketballPeriodLabel(read(basketball, "period")),
-      clockSeconds: asNumber(read(basketball, "clock_seconds_remaining", "clockSecondsRemaining")),
-    };
+    // Same sharpv1.GamestateEvent message as market.game.events.v1, but this is a
+    // shared lane multiplexing several feeds and both sports — decode whichever
+    // sport oneof the record carries (basketball `= 40` or baseball `= 30`).
+    // Neither present → null, which falls through to the heuristic below.
+    return basketballState(decoded) ?? baseballState(decoded);
   }
   return null;
 };

@@ -6,9 +6,10 @@ export type SourceId =
   | "espn"
   | "scrape"
   | "market"
-  // Sportradar LMT comparison leg. Token is load-bearing: the upstream producer
-  // hard-codes it (universal-mapping SourceSrlmt) as the key prefix this app
-  // matches on for the shared market.game.test.events.v1 lane.
+  // A feed carried on the shared market.game.test.events.v1 comparison lane,
+  // identified per-record by a "srlmt|" key prefix the upstream producer stamps
+  // (universal-mapping SourceSrlmt) — the token is a load-bearing wire contract.
+  // The lane is NOT dedicated to this feed; see SHARED_LANE_SOURCES for its set.
   | "srlmt";
 
 export type Game = {
@@ -31,8 +32,8 @@ export type GameState = {
   awayScore: number | null;
   homeScore: number | null;
   live: boolean | null;
-  // Basketball (srlmt) projections. Optional and absent on baseball states;
-  // baseball has no period label / game clock and these stay undefined there.
+  // Basketball projections. Optional and absent on baseball states; baseball has
+  // no period label / game clock and these stay undefined there.
   period?: string | null; // typed period label, e.g. "Q3", "HALFTIME", "END_Q2"
   clockSeconds?: number | null; // seconds remaining in the current period
 };
