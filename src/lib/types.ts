@@ -9,7 +9,7 @@ export type SourceId =
   // A feed carried on the shared market.game.test.events.v1 comparison lane,
   // identified per-record by a "srlmt|" key prefix the upstream producer stamps
   // (universal-mapping SourceSrlmt) — the token is a load-bearing wire contract.
-  // The lane is NOT dedicated to this feed; see SHARED_LANE_SOURCES for its set.
+  // The lane is a transport, not dedicated to this feed (see topics.ts).
   | "srlmt";
 
 export type Game = {

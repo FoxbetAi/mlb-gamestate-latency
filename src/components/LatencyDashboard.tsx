@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { comparePairs, deriveTransitions, MIN_SAMPLES, NOISE_FLOOR_MS, SIGN_CONSISTENCY, sourceMedianBehind } from "@/lib/comparison";
-import { SOURCE_ORDER, TOPICS } from "@/lib/topics";
+import { SOURCE_BY_ID, SOURCE_ORDER, SOURCES, TOPIC_BY_NAME } from "@/lib/topics";
 import type { Game, GameState, Observation, SourceId, StreamMessage, Transition } from "@/lib/types";
 
 type Connection = "connecting" | "live" | "reconnecting" | "error";
 type SourceRuntime = { lastSeen: number | null; observations: number; state?: GameState; identity?: string; frameType?: string };
 
-const sourceName = (source: SourceId) => TOPICS.find((topic) => topic.id === source)?.shortLabel ?? source;
+const sourceName = (source: SourceId) => SOURCE_BY_ID.get(source)?.shortLabel ?? source;
 const formatMs = (value: number | null) => value === null ? "—" : value < 1 ? "<1 ms" : `${Math.round(value)} ms`;
 const formatClock = (value: number) => new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(value);
 const inningText = (state?: GameState) => state?.inning && state.half ? `${state.half === "top" ? "▲" : "▼"} ${state.inning}` : "Awaiting state";
@@ -47,7 +47,7 @@ function useGameStream(game: Game | null) {
         return;
       }
       if (message.type === "warning") {
-        setWarning(message.topic ? `${sourceName(TOPICS.find((topic) => topic.topic === message.topic)?.id ?? "market")}: ${message.message}` : message.message);
+        setWarning(message.topic ? `${sourceName(TOPIC_BY_NAME.get(message.topic)?.source ?? "market")}: ${message.message}` : message.message);
         return;
       }
       if (message.type !== "observation") return;
@@ -187,13 +187,13 @@ export function LatencyDashboard() {
           <div className="sourceHeader" role="row">
             <span role="columnheader">Feed</span><span role="columnheader">Current state</span><span role="columnheader">Frames</span><span role="columnheader">Median behind</span><span role="columnheader">Last seen</span>
           </div>
-          {TOPICS.map((topic) => {
-            const runtime = sources[topic.id];
-            const delay = sourceMedianBehind(transitions, topic.id);
+          {SOURCES.map((feed) => {
+            const runtime = sources[feed.id];
+            const delay = sourceMedianBehind(transitions, feed.id);
             const stale = runtime.lastSeen !== null && now - runtime.lastSeen > 20_000;
             return (
-              <div className="sourceRow" role="row" key={topic.id}>
-                <span className="sourceIdentity" role="cell"><i className={`sourceDot sourceDot--${topic.id}`} aria-hidden="true" /><span><strong>{topic.shortLabel}</strong><small>{topic.cadence}</small></span></span>
+              <div className="sourceRow" role="row" key={feed.id}>
+                <span className="sourceIdentity" role="cell"><i className={`sourceDot sourceDot--${feed.id}`} aria-hidden="true" /><span><strong>{feed.shortLabel}</strong><small>{feed.cadence}</small></span></span>
                 <span role="cell" data-label="State"><strong>{inningText(runtime.state)}</strong><small>{runtime.state?.balls ?? "–"}–{runtime.state?.strikes ?? "–"}, {runtime.state?.outs ?? "–"} out</small></span>
                 <span role="cell" data-label="Frames" className="numeric">{runtime.observations || "—"}</span>
                 <span role="cell" data-label="Median behind" className={`numeric delay ${delay === 0 ? "delay--leader" : ""}`}>{formatMs(delay)}</span>

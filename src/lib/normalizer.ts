@@ -306,9 +306,11 @@ export function normalizeObservation(topic: string, key: string, decoded: unknow
   const frameType = asString(read(decoded, "frame_type", "frameType", "source", "book"));
 
   // Shared lane: provenance and record identity come from the "<source>|<f_event_id>"
-  // key prefix, not the topic. Everywhere else keeps the one-topic-one-source model.
+  // key prefix, not the topic. A record whose prefix names no known source is
+  // DROPPED rather than mislabeled. Dedicated topics use their 1:1 source.
   const shared = topic === SHARED_LANE_TOPIC ? splitSharedLaneKey(key) : null;
-  const source = shared ? (resolveSource(shared.sourceToken) ?? definition.id) : definition.id;
+  const source = shared ? resolveSource(shared.sourceToken) : (definition.source ?? null);
+  if (source === null) return null;
   const recordKey = shared ? shared.fEventId : key;
   const sourceIdentity = shared ? shared.fEventId : asString(read(decoded, ...identityKeys)) || key;
 
