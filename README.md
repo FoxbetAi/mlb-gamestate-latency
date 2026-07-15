@@ -13,6 +13,7 @@ The app subscribes from the latest offset to every currently MLB-capable gamesta
 - `espn.game.events.v1`
 - `scrape.game.events.v1`
 - `market.game.events.v1`
+- `market.game.test.events.v1`
 
 `kalshi.game.events.v1` is intentionally excluded: its checked-in contract is NBA Summer League basketball only.
 
